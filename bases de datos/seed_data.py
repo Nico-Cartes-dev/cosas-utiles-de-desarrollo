@@ -1,9 +1,21 @@
-# importa tu base de datos
-import db
 import random
 from datetime import datetime, timedelta
-# ajusta esta lista a tu caso
-# Listas de datos para generar combinaciones aleatorias
+import sqlite3
+import os
+
+# ==========================================
+# CONFIGURACIÓN PRINCIPAL
+# ==========================================
+# 1. ¿Qué base de datos quieres llenar?
+# Escribe aquí la ruta de tu archivo .db (ej: "mi_proyecto.db")
+ARCHIVO_DB = "taller_bicicletas.db" 
+
+# ==========================================
+# 1. LISTAS DE DATOS (CONFIGURACIÓN)
+# ==========================================
+# Estas listas se usan para generar datos aleatorios.
+# Puedes modificarlas según las necesidades de tu proyecto.
+
 nombres = ["Juan", "Maria", "Pedro", "Ana", "Luis", "Carmen", "Jose", "Laura", "Carlos", "Sofia", "Miguel", "Elena", "Javier", "Isabel", "David"]
 apellidos = ["Perez", "Gonzalez", "Rodriguez", "Lopez", "Martinez", "Sanchez", "Fernandez", "Gomez", "Diaz", "Torres", "Ramirez", "Flores"]
 calles = ["Av. Siempre Viva", "Calle Falsa", "Pasaje Los Olmos", "Av. Libertador", "Calle Central", "Los Aromos", "Las Lilas"]
@@ -20,104 +32,179 @@ servicios_base = [
     {"nombre": "Centrado rueda", "precio": 10000, "esOtro": True}
 ]
 
+# ==========================================
+# 2. CLASE GESTOR DE BASE DE DATOS
+# ==========================================
+class DatabaseManager:
+    """
+    Clase genérica para manejar la conexión y operaciones con la base de datos.
+    Se conecta a una base de datos EXISTENTE.
+    """
+    def __init__(self, db_path):
+        # Verificar que el archivo exista
+        if not os.path.exists(db_path):
+            raise FileNotFoundError(f"No se encontró el archivo de base de datos: {db_path}\nAsegúrate de que la ruta en 'ARCHIVO_DB' sea correcta.")
+
+        # CAMBIAR AQUÍ PARA OTROS MOTORES (ej. psycopg2 para PostgreSQL)
+        self.conn = sqlite3.connect(db_path)
+        self.cursor = self.conn.cursor()
+        
+        print(f"Conectado exitosamente a: {db_path}")
+
+    def verificar_tabla(self, tabla):
+        """Verifica si la tabla existe en la base de datos."""
+        self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (tabla,))
+        if not self.cursor.fetchone():
+            raise ValueError(f"La tabla '{tabla}' no existe en la base de datos. Debes crearla primero.")
+
+    def insertar(self, tabla, datos):
+        """
+        Inserta un diccionario de datos en la tabla especificada.
+        Genera la sentencia SQL dinámicamente.
+        """
+        columnas = ", ".join(datos.keys())
+        placeholders = ", ".join(["?" for _ in datos]) # Usar %s para PostgreSQL
+        valores = list(datos.values())
+        
+        query = f"INSERT INTO {tabla} ({columnas}) VALUES ({placeholders})"
+        try:
+            self.cursor.execute(query, valores)
+        except Exception as e:
+            print(f"Error insertando en {tabla}: {e}")
+
+    def guardar_cambios(self):
+        self.conn.commit()
+
+    def cerrar(self):
+        self.conn.close()
+
+# ==========================================
+# 3. FUNCIONES AUXILIARES
+# ==========================================
 def generar_fecha_aleatoria():
     dias_atras = random.randint(0, 60)
     fecha = datetime.now() - timedelta(days=dias_atras)
     return fecha.strftime("%Y-%m-%d")
 
 def generar_fecha_entrega(fecha_ingreso_str, estado):
+    fecha_ingreso = datetime.strptime(fecha_ingreso_str, "%Y-%m-%d")
     if estado == "Entregado":
-        fecha_ingreso = datetime.strptime(fecha_ingreso_str, "%Y-%m-%d")
         dias_despues = random.randint(1, 7)
-        fecha_entrega = fecha_ingreso + timedelta(days=dias_despues)
-        # Formato DD/MM/YYYY HH:MM para entregados
-        return fecha_entrega.strftime("%d/%m/%Y %H:%M")
+        return (fecha_ingreso + timedelta(days=dias_despues)).strftime("%d/%m/%Y %H:%M")
     else:
-        # Formato YYYY-MM-DD para estimadas
-        fecha_ingreso = datetime.strptime(fecha_ingreso_str, "%Y-%m-%d")
         dias_despues = random.randint(2, 5)
-        fecha_entrega = fecha_ingreso + timedelta(days=dias_despues)
-        return fecha_entrega.strftime("%Y-%m-%d")
+        return (fecha_ingreso + timedelta(days=dias_despues)).strftime("%Y-%m-%d")
 
-def poblar_base_datos(cantidad_activas=1000, cantidad_historial=1000):
-    print(f"Generando {cantidad_activas} registros activos y {cantidad_historial} registros históricos...")
+# ==========================================
+# 4. GENERADORES DE DATOS (PERSONALIZABLE)
+# ==========================================
+def generar_datos_orden(estado_forzado=None):
+    """
+    Genera un diccionario con los datos para una fila.
+    IMPORTANTE: Las claves del diccionario (ej: "cliente", "telefono") 
+    DEBEN coincidir con los nombres de las columnas en tu base de datos.
+    """
+    cliente = f"{random.choice(nombres)} {random.choice(apellidos)}"
+    telefono = "+569" + "".join([str(random.randint(0, 9)) for _ in range(8)])
     
-    # Asegurar que las tablas existan
-    db.crear_tablas()
+    tipo_bicicleta = random.choice(tipos)
+    marca = random.choice(marcas)
+    modelo = random.choice(modelos)
+    color = random.choice(colores)
+    bicicleta = f"{tipo_bicicleta} {marca} {modelo}"
     
-    estados_activos = ["Pendiente", "En reparación", "Listo"]
-    estados_historial = ["Entregado"]
+    estado = estado_forzado if estado_forzado else random.choice(estados)
+    fecha_ingreso = generar_fecha_aleatoria()
+    fecha_entrega = generar_fecha_entrega(fecha_ingreso, estado)
     
-    # Función auxiliar para generar e insertar una orden
-    def crear_orden(estado_forzado=None):
-        cliente = f"{random.choice(nombres)} {random.choice(apellidos)}"
-        telefono = "+569" + "".join([str(random.randint(0, 9)) for _ in range(8)])
+    # Lógica de servicios y precio
+    num_servicios = random.randint(1, 3)
+    servicios_seleccionados = random.sample(servicios_base, num_servicios)
+    
+    precio_total = sum(s["precio"] for s in servicios_seleccionados)
+    if any(s["nombre"] == "Reparación" for s in servicios_seleccionados):
+        precio_total += random.randint(5000, 50000)
         
-        tipo_bicicleta = random.choice(tipos)
-        marca = random.choice(marcas)
-        modelo = random.choice(modelos)
-        color = random.choice(colores)
-        bicicleta = f"{tipo_bicicleta} {marca} {modelo}"
+    direccion = f"{random.choice(calles)} {random.randint(100, 9999)}"
+    correo = f"{cliente.lower().replace(' ', '.')}@email.com"
+    
+    observaciones = "Cliente solicita revisión extra de frenos" if random.random() > 0.7 else ""
+    
+    # Retornar diccionario con claves iguales a las columnas de la BD
+    return {
+        "cliente": cliente,
+        "telefono": telefono,
+        "bicicleta": bicicleta,
+        "descripcion": f"Servicio de {servicios_seleccionados[0]['nombre']}",
+        "estado": estado,
+        "fecha_ingreso": fecha_ingreso,
+        "precio": precio_total,
+        "direccion": direccion,
+        "correo": correo,
+        "tipo_bicicleta": tipo_bicicleta,
+        "marca": marca,
+        "modelo": modelo,
+        "color": color,
+        "observaciones": observaciones,
+        "fecha_entrega": fecha_entrega
+    }
+
+# ==========================================
+# 5. EJECUCIÓN PRINCIPAL
+# ==========================================
+def main():
+    # Configuración de qué generar
+    CONFIGURACION = [
+        {
+            "tabla": "ordenes", # Nombre de la tabla existente en tu DB
+            # cantidad de datos a generar
+            "cantidad": 1000,
+            "generador": lambda: generar_datos_orden(estado_forzado=random.choice(["Pendiente", "En reparación", "Listo"]))
+        },
+        {
+            "tabla": "ordenes", 
+            # cantidad de datos a generar
+            "cantidad": 1000,
+            "generador": lambda: generar_datos_orden(estado_forzado="Entregado")
+        }
+    ]
+
+    print("Iniciando generación de datos...")
+    
+    try:
+        # Inicializar conexión a base de datos existente
+        db = DatabaseManager(ARCHIVO_DB)
         
-        estado = estado_forzado if estado_forzado else random.choice(estados)
-        fecha_ingreso = generar_fecha_aleatoria()
-        fecha_entrega = generar_fecha_entrega(fecha_ingreso, estado)
-        
-        # Generar servicios aleatorios
-        num_servicios = random.randint(1, 3)
-        servicios_seleccionados = random.sample(servicios_base, num_servicios)
-        
-        # Calcular precio
-        precio_total = sum(s["precio"] for s in servicios_seleccionados)
-        if any(s["nombre"] == "Reparación" for s in servicios_seleccionados):
-            precio_total += random.randint(5000, 50000)
+        total_registros = 0
+        for config in CONFIGURACION:
+            tabla = config["tabla"]
+            cantidad = config["cantidad"]
+            generador = config["generador"]
             
-        direccion = f"{random.choice(calles)} {random.randint(100, 9999)}"
-        correo = f"{cliente.lower().replace(' ', '.')}@email.com"
-        
-        observaciones = ""
-        if random.random() > 0.7:
-            observaciones = "Cliente solicita revisión extra de frenos"
+            # Verificar que la tabla exista antes de empezar
+            db.verificar_tabla(tabla)
             
-        detalle_orden = ""
-        if random.random() > 0.7:
-            detalle_orden = "Bicicleta con rayones visibles en cuadro"
-
-        db.insertar_orden(
-            cliente=cliente,
-            telefono=telefono,
-            bicicleta=bicicleta,
-            descripcion=f"Servicio de {servicios_seleccionados[0]['nombre']}",
-            estado=estado,
-            fecha_ingreso=fecha_ingreso,
-            precio=precio_total,
-            servicios_seleccionados=servicios_seleccionados,
-            direccion=direccion,
-            correo=correo,
-            tipo_telefono="Móvil",
-            tipo_bicicleta=tipo_bicicleta,
-            marca=marca,
-            modelo=modelo,
-            color=color,
-            observaciones=observaciones,
-            detalle_orden=detalle_orden,
-            recibido_por="Administrador",
-            atendido_por="Mecánico Jefe",
-            fecha_entrega=fecha_entrega
-        )
-
-    # Generar Activas
-    print("Generando órdenes activas...")
-    for _ in range(cantidad_activas):
-        crear_orden(random.choice(estados_activos))
-
-    # Generar Historial
-    print("Generando órdenes históricas...")
-    for _ in range(cantidad_historial):
-        crear_orden(random.choice(estados_historial))
+            print(f"Generando {cantidad} registros para '{tabla}'...")
+            
+            for _ in range(cantidad):
+                datos = generador()
+                db.insertar(tabla, datos)
+                total_registros += 1
+                
+            print(f"  -> Completado lote para '{tabla}'")
+            
+        db.guardar_cambios()
+        print(f"\n¡Éxito! Se insertaron {total_registros} registros en total en '{ARCHIVO_DB}'.")
         
-    print("¡Registros insertados correctamente!")
+    except FileNotFoundError as e:
+        print(f"\nERROR DE ARCHIVO: {e}")
+    except ValueError as e:
+        print(f"\nERROR DE TABLA: {e}")
+    except Exception as e:
+        print(f"\nError durante la ejecución: {e}")
+    finally:
+        if 'db' in locals():
+            db.cerrar()
 
 if __name__ == "__main__":
-    # cantidad de datos a generar 
-    poblar_base_datos(10000,10000)
+    main()
