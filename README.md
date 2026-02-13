@@ -1,6 +1,6 @@
 # Cosas Útiles de Desarrollo
 
-Este repositorio contiene una colección de scripts y utilidades prácticas para el desarrollo de software, enfocadas principalmente en Python. Aquí encontrarás herramientas para validación de seguridad, automatización de desarrollo y pruebas de carga para APIs.
+Este repositorio contiene una colección de scripts y utilidades prácticas para el desarrollo de software, enfocadas principalmente en Python. Aquí encontrarás herramientas para validación de seguridad, automatización de desarrollo, pruebas de carga y gestión de bases de datos.
 
 ## Contenido
 
@@ -55,6 +55,32 @@ pip install requests
 Configura la `BASE_URL` y los `ENDPOINTS` dentro del script y ejecuta:
 ```bash
 python "testeos de api/stress test/load_test.py"
+```
+
+### 4. Utilidades para Bases de Datos
+Ubicación: `bases de datos/`
+
+Herramientas para poblar y analizar bases de datos SQLite de manera rápida y sencilla. Son completamente configurables y agnósticas al proyecto.
+
+*   **`seed_data.py`**: Poblador de bases de datos (Seeder) genérico.
+    *   Permite generar miles de registros aleatorios para probar tu aplicación.
+    *   Configurable: Define tu archivo `.db`, la estructura de datos y la cantidad de registros.
+    *   No crea tablas, solo las llena (ideal para probar sobre una estructura existente).
+
+*   **`contador_de_datos_por_tabla.py`**: Analizador de datos simple.
+    *   Genera un reporte visual en consola sobre la distribución de datos en una tabla específica.
+    *   Agrupa por columnas (ej: ver cuántos usuarios hay por "estado" o "rol").
+    *   Muestra porcentajes y barras gráficas simples.
+
+**Uso:**
+1.  Configura las variables al inicio de cada archivo (`ARCHIVO_DB`, `TABLA`, etc.).
+2.  Ejecuta:
+```bash
+# Para llenar la base de datos
+python "bases de datos/seed_data.py"
+
+# Para analizar los datos
+python "bases de datos/contador_de_datos_por_tabla.py"
 ```
 
 ---
